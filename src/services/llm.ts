@@ -72,3 +72,22 @@ export async function parseUserIntent(
   }
   return { action: "unknown", reply: raw };
 }
+
+/** Одно короткое ободряющее предложение, релевантное задаче, чтобы помочь начать. */
+export async function getEncouragingLineForTask(taskTitle: string): Promise<string> {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content:
+          "Ты помогаешь человеку начать задачу. Напиши ОДНО короткое ободряющее предложение на русском, релевантное задаче (например: «Пять минут — и дело сдвинется» или «Пара звонков — и готово»). Без кавычек, без пояснений, только одно предложение.",
+      },
+      { role: "user", content: `Задача: ${taskTitle}` },
+    ],
+    max_tokens: 60,
+    temperature: 0.5,
+  });
+  const line = response.choices[0]?.message?.content?.trim();
+  return line ? line.replace(/^["']|["']$/g, "") : "";
+}
