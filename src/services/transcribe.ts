@@ -19,9 +19,10 @@ export async function transcribeVoiceFromTelegram(
   if (!response.ok) throw new Error(`Failed to download voice: ${response.status}`);
   const buffer = Buffer.from(await response.arrayBuffer());
 
-  const file = new File([buffer], "voice.ogg", { type: "audio/ogg" });
+  // Blob is available in Node 18+; File is only in Node 20+
+  const blob = new Blob([buffer], { type: "audio/ogg" });
   const transcription = await openai.audio.transcriptions.create({
-    file,
+    file: blob,
     model: "gpt-4o-mini-transcribe",
     language: "ru",
   });
