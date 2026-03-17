@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "outputDirectory": "public",
   "rewrites": [
     { "source": "/api/webhook", "destination": "/api/webhook" },
     { "source": "/api/cron/reminders", "destination": "/api/cron/reminders" }
