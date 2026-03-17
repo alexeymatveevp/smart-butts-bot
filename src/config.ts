@@ -16,7 +16,6 @@ export const config = {
     privateKey: requireEnv("GOOGLE_PRIVATE_KEY").replace(/\\n/g, "\n"),
     sheetId: requireEnv("GOOGLE_SHEET_ID"),
   },
-  cronSecret: optionalEnv("CRON_SECRET"),
   husbandChatId: optionalEnv("HUSBAND_CHAT_ID"),
   wifeChatId: optionalEnv("WIFE_CHAT_ID"),
   /** Sheet tab name for tasks (your existing tab, e.g. "Sheet1") */

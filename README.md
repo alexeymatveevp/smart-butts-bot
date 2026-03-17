@@ -52,7 +52,6 @@ Copy `.env.example` to `.env` and set:
 - `GOOGLE_SERVICE_ACCOUNT_EMAIL` — from the service account JSON
 - `GOOGLE_PRIVATE_KEY` — full private key from JSON (keep newlines or use `\n`)
 - `GOOGLE_SHEET_ID` — spreadsheet ID
-- `CRON_SECRET` (optional) — secret to protect the cron endpoint
 - `TASKS_SHEET_NAME` (optional) — tab name for tasks (default: `Sheet1`)
 - `USERS_SHEET_NAME` (optional) — tab name for the 2nd sheet (e.g. `Users` or `Sheet2`)
 - `USERS_SHEET_INDEX` (optional) — use 2nd tab by position: set to `1`; avoids "Unable to parse range" when the tab name does not match
@@ -74,32 +73,24 @@ Use **long polling** so Telegram sends updates to your machine (no webhook or pu
    ```
    (`npm run dev` uses `tsx watch src/poll.ts` — restarts on file changes.)
 
-When you deploy to Vercel again, set the webhook so Telegram sends updates to your app instead of polling.
+### 6. Deploy to Railway
 
-### 6. Deploy to Vercel
+На Railway бот работает в одном процессе: long polling + раз в минуту проверка напоминаний. Webhook не нужен.
 
-```bash
-npm install
-npx vercel
-```
+1. Создайте проект на [Railway](https://railway.app), подключите репозиторий.
+2. **Build Command:** `npm run build`
+3. **Start Command:** `npm start` (запускает `node dist/src/poll.js`)
+4. В настройках сервиса добавьте все переменные окружения из `.env` (BOT_TOKEN, OPENAI_API_KEY, GOOGLE_*, TASKS_SHEET_NAME и т.д.).
+5. Если раньше бот работал по webhook, удалите его, чтобы Telegram снова слал обновления в long polling:
+   ```bash
+   curl "https://api.telegram.org/bot<BOT_TOKEN>/deleteWebhook"
+   ```
 
-Add the same environment variables in the Vercel project settings.
+Сервис слушает порт из `PORT` (Railway задаёт сам) и отдаёт 200 на любой запрос — для health check.
 
-### 7. Set Telegram Webhook
+### 7. Напоминания
 
-After deployment, set the webhook so Telegram sends updates to your app:
-
-```bash
-# Replace BOT_TOKEN and YOUR_VERCEL_URL with your values
-curl "https://api.telegram.org/bot<BOT_TOKEN>/setWebhook?url=https://<YOUR_VERCEL_URL>/api/webhook"
-```
-
-To use a secret token (recommended), set it in [BotFather](https://t.me/BotFather) (Bot Settings → Secret Token) and add the same value as `WEBHOOK_SECRET` when calling `setWebhook` (or configure in grammY webhook options).
-
-### 8. Cron (Reminders)
-
-- On Vercel Pro, the built-in cron runs every 30 minutes.
-- On Hobby, use an external cron (e.g. [cron-job.org](https://cron-job.org)) to call `https://<YOUR_VERCEL_URL>/api/cron/reminders` with method POST and header `Authorization: Bearer <CRON_SECRET>` every 30 minutes.
+Планировщик встроен в процесс: раз в минуту проверяются задачи из таблицы и отправляются напоминания. Отдельный cron или HTTP-эндпоинт не нужны.
 
 ## Commands
 
@@ -118,9 +109,8 @@ Voice or text examples (Russian):
 
 ## Project structure
 
-- `api/webhook.ts` — Vercel serverless webhook handler
-- `api/cron/reminders.ts` — Cron: send due reminders, update next reminder time
-- `src/bot.ts` — grammY bot and handler registration
+- `src/poll.ts` — точка входа: long polling, планировщик напоминаний (раз в минуту), HTTP health check
+- `src/bot.ts` — grammY bot и регистрация хендлеров
 - `src/handlers/` — Commands, voice, text, callbacks
 - `src/services/` — Sheets, transcribe, LLM, notify
 - `src/actions/execute.ts` — Execute parsed LLM actions
