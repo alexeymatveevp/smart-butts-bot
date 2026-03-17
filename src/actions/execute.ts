@@ -50,12 +50,9 @@ export async function executeAction(ctx: Context, action: LLMAction): Promise<vo
       assignedTo = id;
       assignedName = action.assignTo === "husband" ? "Лёша" : "Таня";
     }
+    const rawHours = action.notify !== true ? 0 : (action.periodHours ?? undefined);
     const reminderHours =
-      action.notify !== true
-        ? 0
-        : action.periodMinutes != null
-          ? action.periodMinutes / 60
-          : action.periodHours ?? undefined;
+      rawHours != null && rawHours > 0 && rawHours < 24 ? 24 : rawHours ?? undefined;
     const task = createTask({
       title: action.title,
       assignedTo,
@@ -148,19 +145,18 @@ export async function executeAction(ctx: Context, action: LLMAction): Promise<vo
       await ctx.reply("Такую задачу не нашла.");
       return;
     }
-    const next = new Date(Date.now() + action.periodHours * 60 * 60 * 1000).toISOString();
+    const periodHours = Math.max(24, action.periodHours);
+    const next = new Date(Date.now() + periodHours * 60 * 60 * 1000).toISOString();
     await updateTask(task.id, {
-      reminderPeriodHours: action.periodHours,
+      reminderPeriodHours: periodHours,
       nextReminderAt: next,
       lastNotified: new Date().toISOString(),
     });
-    log("reminder period set", { taskTitle: task.title, periodHours: action.periodHours });
+    log("reminder period set", { taskTitle: task.title, periodHours });
     const periodText =
-      action.periodHours >= 168
-        ? `каждые ${action.periodHours / 168} нед.`
-        : action.periodHours >= 24
-          ? `каждые ${action.periodHours / 24} дн.`
-          : `каждые ${action.periodHours} ч.`;
+      periodHours >= 168
+        ? `каждые ${periodHours / 168} нед.`
+        : `каждые ${periodHours / 24} дн.`;
     await ctx.reply(`Напоминания по задаче «${task.title}» теперь ${periodText}`);
     return;
   }
@@ -174,22 +170,27 @@ export async function executeAction(ctx: Context, action: LLMAction): Promise<vo
     }
     let next: string;
     if (action.inHours != null) {
-      next = new Date(Date.now() + action.inHours * 60 * 60 * 1000).toISOString();
+      const hours = Math.max(24, action.inHours);
+      next = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
     } else if (action.atTime) {
       const t = new Date(action.atTime);
       if (Number.isNaN(t.getTime())) {
-        await ctx.reply("Не смогла разобрать дату. Скажи, например: «напомни через 2 часа».");
+        await ctx.reply("Не смогла разобрать дату. Скажи, например: «напомни через 2 дня».");
+        return;
+      }
+      const minTime = Date.now() + 24 * 60 * 60 * 1000;
+      if (t.getTime() < minTime) {
+        await ctx.reply("Минимальный интервал напоминания — 1 день. Укажи дату не раньше завтра.");
         return;
       }
       next = t.toISOString();
     } else {
-      await ctx.reply("Укажи когда напомнить: «через N часов» или точное время.");
+      await ctx.reply("Укажи когда напомнить: «через N дней» или точную дату (минимум 1 день).");
       return;
     }
     await updateTask(task.id, {
       reminderPeriodHours: 0,
       nextReminderAt: next,
-      lastNotified: new Date().toISOString(),
     });
     log("reminder once set", { taskTitle: task.title, next });
     await ctx.reply(`Напомню о задаче «${task.title}» в указанное время (один раз).`);

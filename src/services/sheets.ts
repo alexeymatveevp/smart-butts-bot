@@ -54,40 +54,29 @@ function getClient() {
   return google.sheets({ version: "v4", auth });
 }
 
-/** Parse "every 1 week", "every 3 days", "every 5 minutes" to hours. Empty = 0. */
+const MIN_REMINDER_HOURS = 24;
+
+/** Parse "every N week(s)", "every N day(s)" to hours. Empty = 0. Меньше суток при чтении считаем как 24 ч. */
 function parseNotifyToHours(notify: string): number {
   const s = (notify || "").trim().toLowerCase();
   if (!s || /^(no|none|never|—|нет|без напоминаний?)$/.test(s)) return 0;
   const weekMatch = s.match(/every\s*(\d+)\s*week/i);
   const dayMatch = s.match(/every\s*(\d+)\s*day/i);
-  const hourMatch = s.match(/every\s*(\d+)\s*hour/i);
-  const minMatch = s.match(/every\s*(\d+)\s*minute/i);
   if (weekMatch) return Number(weekMatch[1]) * 168;
   if (dayMatch) return Number(dayMatch[1]) * 24;
-  if (hourMatch) return Number(hourMatch[1]);
-  if (minMatch) return Number(minMatch[1]) / 60;
-  return DEFAULT_REMINDER_HOURS;
+  return Math.max(MIN_REMINDER_HOURS, DEFAULT_REMINDER_HOURS);
 }
 
-/** Format hours to "every N week(s)", "every N day(s)", "every N hour(s)", or "every N minute(s)". */
+/** Format hours to "every N week(s)" or "every N day(s)". Минимум 1 день. */
 function formatNotifyFromHours(hours: number): string {
   if (!hours) return "";
-  if (hours >= 168 && hours % 168 === 0) {
-    const w = hours / 168;
+  const h = Math.max(hours, MIN_REMINDER_HOURS);
+  if (h >= 168 && h % 168 === 0) {
+    const w = h / 168;
     return w === 1 ? "every 1 week" : `every ${w} weeks`;
   }
-  if (hours >= 24 && hours % 24 === 0) {
-    const d = hours / 24;
-    return d === 1 ? "every 1 day" : `every ${d} days`;
-  }
-  if (hours >= 1 && Number.isInteger(hours)) {
-    return hours === 1 ? "every 1 hour" : `every ${hours} hours`;
-  }
-  if (hours < 1 && hours > 0) {
-    const mins = Math.round(hours * 60);
-    return mins === 1 ? "every 1 minute" : `every ${mins} minutes`;
-  }
-  return `every ${hours} hours`;
+  const d = Math.ceil(h / 24) || 1;
+  return d === 1 ? "every 1 day" : `every ${d} days`;
 }
 
 function sheetUserToAssignedName(sheetUser: string): string {

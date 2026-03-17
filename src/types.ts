@@ -26,7 +26,7 @@ export interface User {
 
 // LLM structured actions (Russian-friendly field names in prompts; we use assignTo etc. in code)
 export type LLMAction =
-  | { action: "create_task"; title: string; assignTo: "husband" | "wife" | "me" | "both"; notify?: boolean; periodMinutes?: number; periodHours?: number }
+  | { action: "create_task"; title: string; assignTo: "husband" | "wife" | "me" | "both"; notify?: boolean; periodHours?: number }
   | { action: "list_tasks"; filter?: "my" | "all" }
   | { action: "complete_task"; taskTitle: string }
   | { action: "delete_task"; taskTitle: string }
