@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/api/webhook", "destination": "/api/webhook" },
+    { "source": "/api/cron/reminders", "destination": "/api/cron/reminders" }
+  ],
+  "functions": {
+    "api/webhook.ts": { "memory": 1024, "maxDuration": 30 },
+    "api/cron/reminders.ts": { "memory": 512, "maxDuration": 30 }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/reminders",
+      "schedule": "*/30 * * * *"
+    }
+  ]
+}
