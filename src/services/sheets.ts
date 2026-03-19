@@ -1,7 +1,7 @@
 import { google } from "googleapis";
 import { config } from "../config.js";
 import type { Task, User } from "../types.js";
-import { DEFAULT_REMINDER_HOURS } from "../config.js";
+import { getNextNotificationAt } from "./notifySchedule.js";
 import { log } from "../logger.js";
 
 // Users sheet: name from config or resolved by index (2nd tab). Row 1 = headers, data from row 2.
@@ -33,14 +33,14 @@ async function getUsersSheetTitle(): Promise<string> {
   return "Users";
 }
 
-// Tasks sheet: A=user, B=summary, C=created, D=lastNotified, E=notify, F=status
-// user = sheet user name (alexey, tanyu). notify = schedule template (e.g. "every 1 week"). No id column — we use row index.
+// Tasks sheet: A=user, B=summary, C=createdAt, D=notify, E=lastNotifiedAt, F=nextNotificationAt, G=status
 const TASKS_COL_USER = 0;
 const TASKS_COL_SUMMARY = 1;
-const TASKS_COL_CREATED = 2;
-const TASKS_COL_NEXT = 3;
-const TASKS_COL_NOTIFY = 4;
-const TASKS_COL_STATUS = 5;
+const TASKS_COL_CREATED_AT = 2;
+const TASKS_COL_NOTIFY = 3;
+const TASKS_COL_LAST_NOTIFIED_AT = 4;
+const TASKS_COL_NEXT_NOTIFICATION_AT = 5;
+const TASKS_COL_STATUS = 6;
 const TASKS_DATA_START = 2;
 
 function getClient() {
@@ -54,69 +54,33 @@ function getClient() {
   return google.sheets({ version: "v4", auth });
 }
 
-const MIN_REMINDER_HOURS = 24;
-
-/** Parse "every N week(s)", "every N day(s)" to hours. Empty = 0. Меньше суток при чтении считаем как 24 ч. */
-function parseNotifyToHours(notify: string): number {
-  const s = (notify || "").trim().toLowerCase();
-  if (!s || /^(no|none|never|—|нет|без напоминаний?)$/.test(s)) return 0;
-  const weekMatch = s.match(/every\s*(\d+)\s*week/i);
-  const dayMatch = s.match(/every\s*(\d+)\s*day/i);
-  if (weekMatch) return Number(weekMatch[1]) * 168;
-  if (dayMatch) return Number(dayMatch[1]) * 24;
-  return Math.max(MIN_REMINDER_HOURS, DEFAULT_REMINDER_HOURS);
-}
-
-/** Format hours to "every N week(s)" or "every N day(s)". Минимум 1 день. */
-function formatNotifyFromHours(hours: number): string {
-  if (!hours) return "";
-  const h = Math.max(hours, MIN_REMINDER_HOURS);
-  if (h >= 168 && h % 168 === 0) {
-    const w = h / 168;
-    return w === 1 ? "every 1 week" : `every ${w} weeks`;
-  }
-  const d = Math.ceil(h / 24) || 1;
-  return d === 1 ? "every 1 day" : `every ${d} days`;
-}
-
-function sheetUserToAssignedName(sheetUser: string): string {
+/** Display name for UI only (not stored in Task). */
+export function sheetUserToDisplayName(sheetUser: string): string {
   if (!sheetUser || sheetUser === "both" || sheetUser.toLowerCase() === "оба") return "Оба";
   if (sheetUser === config.husbandSheetUser) return "Лёша";
   if (sheetUser === config.wifeSheetUser) return "Таня";
   return sheetUser;
 }
 
-/** Column E = lastNotified. We compute nextReminderAt = lastNotified + period (or createdAt + period). */
-function addHours(isoDate: string, hours: number): string {
-  return new Date(new Date(isoDate).getTime() + hours * 60 * 60 * 1000).toISOString();
-}
-
-/** Row from sheet: [user, summary, created, lastNotified, notify, status], rowIndex = sheet row number */
-function rowToTask(row: string[], rowIndex: number, assignedToChatId: string): Task {
+/** Row from sheet: [user, summary, createdAt, notify, lastNotifiedAt, nextNotificationAt, status] */
+function rowToTask(row: string[], rowIndex: number): Task {
   const id = `row_${rowIndex}`;
-  const sheetUser = row[TASKS_COL_USER]?.trim() ?? "";
-  const title = row[TASKS_COL_SUMMARY]?.trim() ?? "";
-  const createdAt = row[TASKS_COL_CREATED]?.trim() ?? "";
-  const lastNotified = row[TASKS_COL_NEXT]?.trim() ?? "";
-  const notifyStr = row[TASKS_COL_NOTIFY]?.trim() ?? "";
+  const user = row[TASKS_COL_USER]?.trim() ?? "";
+  const summary = row[TASKS_COL_SUMMARY]?.trim() ?? "";
+  const createdAt = row[TASKS_COL_CREATED_AT]?.trim() ?? "";
+  const notify = row[TASKS_COL_NOTIFY]?.trim() ?? "";
+  const lastNotifiedAt = row[TASKS_COL_LAST_NOTIFIED_AT]?.trim() ?? "";
+  const nextNotificationAt = row[TASKS_COL_NEXT_NOTIFICATION_AT]?.trim() ?? "";
   const status = (row[TASKS_COL_STATUS]?.trim() || "active") as Task["status"];
-  const periodHours = parseNotifyToHours(notifyStr);
-  const base = lastNotified || createdAt || new Date().toISOString();
-  // No reminder (period 0): use far-future so task is never due for reminder
-  const nextReminderAt = periodHours
-    ? addHours(base, periodHours)
-    : "9999-12-31T23:59:59.000Z";
   return {
     id,
-    title,
-    assignedTo: assignedToChatId,
-    assignedName: sheetUserToAssignedName(sheetUser),
-    createdBy: "",
-    status: status === "done" ? "done" : "active",
-    reminderPeriodHours: periodHours,
-    nextReminderAt,
+    user,
+    summary,
     createdAt: createdAt || new Date().toISOString(),
-    lastNotified: lastNotified || undefined,
+    notify,
+    lastNotifiedAt,
+    nextNotificationAt: nextNotificationAt || "9999-12-31T23:59:59.000Z",
+    status: status === "done" ? "done" : "active",
   };
 }
 
@@ -133,27 +97,31 @@ async function getSheetUserToChatId(): Promise<Map<string, string>> {
   return map;
 }
 
+/** Resolve task user to chat ID(s) for sending reminders. */
+export async function getChatIdsForTaskUser(user: string): Promise<string[]> {
+  const u = (user || "").trim().toLowerCase();
+  if (!u || u === "both" || u === "оба") return getAllFamilyChatIds();
+  const map = await getSheetUserToChatId();
+  const chatId = map.get(user.trim());
+  return chatId ? [chatId] : [];
+}
+
 export async function getTasks(_sheetId?: string): Promise<Task[]> {
   const sheets = getClient();
-  const range = sheetRange(config.tasksSheetName, `A${TASKS_DATA_START}:F`);
+  const range = sheetRange(config.tasksSheetName, `A${TASKS_DATA_START}:G`);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.google.sheetId,
     range,
   });
   const rows = (res.data.values ?? []) as string[][];
-  const sheetUserToChatId = await getSheetUserToChatId();
   const tasks: Task[] = [];
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (!row || row.length < 2) continue;
-    const rowNum = TASKS_DATA_START + i;
     const summary = row[TASKS_COL_SUMMARY]?.trim();
-    if (!summary) continue; // skip empty rows
-    const sheetUser = row[TASKS_COL_USER]?.trim() || "";
-    const isUnassigned = !sheetUser || sheetUser.toLowerCase() === "both" || sheetUser.toLowerCase() === "оба";
-    const chatId = isUnassigned ? "" : sheetUserToChatId.get(sheetUser);
-    if (!isUnassigned && !chatId) continue;
-    tasks.push(rowToTask(row, rowNum, chatId ?? ""));
+    if (!summary) continue;
+    const rowNum = TASKS_DATA_START + i;
+    tasks.push(rowToTask(row, rowNum));
   }
   return tasks;
 }
@@ -163,23 +131,35 @@ export async function getActiveTasks(): Promise<Task[]> {
   return all.filter((t) => t.status === "active");
 }
 
+const FAR_FUTURE = "9999-12-31T23:59:59.000Z";
+
 export async function getTasksDueForReminder(now: Date): Promise<Task[]> {
   const active = await getActiveTasks();
   const nowIso = now.toISOString();
-  const disabledAt = "9999-12-31T23:59:59.000Z";
-  return active.filter(
-    (t) => t.nextReminderAt && t.nextReminderAt <= nowIso && t.nextReminderAt < disabledAt
-  );
+  return active.filter((t) => {
+    const hasScheduled = t.nextNotificationAt && t.nextNotificationAt < FAR_FUTURE;
+    if (hasScheduled) return t.nextNotificationAt! <= nowIso;
+    // nextNotificationAt empty or far future: if task has notify, compute first run and treat as due if it's in the past
+    if (!t.notify) return false;
+    const { next } = getNextNotificationAt(
+      t.notify,
+      now,
+      t.lastNotifiedAt ?? "",
+      t.createdAt
+    );
+    return next <= nowIso && next < FAR_FUTURE;
+  });
 }
 
-/** Build row: [user, summary, created, lastNotified, notify, status] — no id column */
-function taskToRow(t: Task, sheetUser: string): string[] {
+/** Build row: [user, summary, createdAt, notify, lastNotifiedAt, nextNotificationAt, status] */
+function taskToRow(t: Task): string[] {
   return [
-    sheetUser,
-    t.title,
+    t.user,
+    t.summary,
     t.createdAt,
-    t.lastNotified ?? "",
-    formatNotifyFromHours(t.reminderPeriodHours),
+    t.notify,
+    t.lastNotifiedAt ?? "",
+    t.nextNotificationAt ?? "",
     t.status,
   ];
 }
@@ -188,15 +168,9 @@ function taskToRow(t: Task, sheetUser: string): string[] {
 const TASKS_MAX_SCAN_ROWS = 2000;
 
 export async function addTask(task: Task): Promise<void> {
-  const users = await getUsers();
-  const isUnassigned = !task.assignedTo || task.assignedName === "Оба";
-  const sheetUser = isUnassigned
-    ? ""
-    : (users.find((x) => x.chatId === task.assignedTo)?.sheetUser ??
-       (task.assignedName === "Лёша" ? config.husbandSheetUser : config.wifeSheetUser));
-  const row = taskToRow(task, sheetUser);
+  const row = taskToRow(task);
   const sheets = getClient();
-  const readRange = sheetRange(config.tasksSheetName, `A${TASKS_DATA_START}:F${TASKS_DATA_START + TASKS_MAX_SCAN_ROWS - 1}`);
+  const readRange = sheetRange(config.tasksSheetName, `A${TASKS_DATA_START}:G${TASKS_DATA_START + TASKS_MAX_SCAN_ROWS - 1}`);
   const resGet = await sheets.spreadsheets.values.get({
     spreadsheetId: config.google.sheetId,
     range: readRange,
@@ -211,7 +185,7 @@ export async function addTask(task: Task): Promise<void> {
     }
   }
   const rowNum = TASKS_DATA_START + insertRowIndex;
-  const updateRange = sheetRange(config.tasksSheetName, `A${rowNum}:F${rowNum}`);
+  const updateRange = sheetRange(config.tasksSheetName, `A${rowNum}:G${rowNum}`);
   await sheets.spreadsheets.values.update({
     spreadsheetId: config.google.sheetId,
     range: updateRange,
@@ -222,32 +196,21 @@ export async function addTask(task: Task): Promise<void> {
 
 export async function updateTask(
   taskId: string,
-  updates: Partial<Pick<Task, "status" | "nextReminderAt" | "reminderPeriodHours" | "lastNotified" | "assignedTo" | "assignedName">>
+  updates: Partial<Pick<Task, "status" | "user" | "notify" | "lastNotifiedAt" | "nextNotificationAt">>
 ): Promise<void> {
+  const rowNum = parseInt(taskId.replace("row_", ""), 10);
+  if (Number.isNaN(rowNum) || rowNum < TASKS_DATA_START) return;
   const tasks = await getTasks();
-  const idx = tasks.findIndex((t) => t.id === taskId);
-  if (idx < 0) return;
-  const row = TASKS_DATA_START + idx;
-  const task = { ...tasks[idx], ...updates };
-  const period = updates.reminderPeriodHours ?? tasks[idx].reminderPeriodHours;
-  if (updates.nextReminderAt && !updates.lastNotified && period > 0) {
-    task.lastNotified = new Date().toISOString();
-  }
-  const sheetUser =
-    task.assignedName === "Оба"
-      ? ""
-      : task.assignedName === "Лёша"
-        ? config.husbandSheetUser
-        : task.assignedName === "Таня"
-          ? config.wifeSheetUser
-          : tasks[idx].assignedName;
-  const range = sheetRange(config.tasksSheetName, `A${row}:F${row}`);
+  const task = tasks.find((t) => t.id === taskId);
+  if (!task) return;
+  const merged = { ...task, ...updates };
+  const range = sheetRange(config.tasksSheetName, `A${rowNum}:G${rowNum}`);
   const sheets = getClient();
   await sheets.spreadsheets.values.update({
     spreadsheetId: config.google.sheetId,
     range,
     valueInputOption: "USER_ENTERED",
-    requestBody: { values: [taskToRow(task, sheetUser)] },
+    requestBody: { values: [taskToRow(merged)] },
   });
 }
 
@@ -350,28 +313,19 @@ export async function upsertUser(user: User): Promise<void> {
   }
 }
 
-export function createTask(params: {
-  title: string;
-  assignedTo: string;
-  assignedName: string;
-  createdBy: string;
-  reminderPeriodHours?: number;
-}): Task {
+export function createTask(params: { user: string; summary: string; notify?: string }): Task {
   const now = new Date().toISOString();
-  const hours = params.reminderPeriodHours ?? DEFAULT_REMINDER_HOURS;
-  const next =
-    hours > 0
-      ? new Date(Date.now() + hours * 60 * 60 * 1000).toISOString()
-      : "9999-12-31T23:59:59.000Z";
+  const ref = new Date();
+  const notify = (params.notify || "").trim();
+  const { next: nextNotificationAt } = getNextNotificationAt(notify, ref, "", now);
   return {
-    id: crypto.randomUUID(),
-    title: params.title,
-    assignedTo: params.assignedTo,
-    assignedName: params.assignedName,
-    createdBy: params.createdBy,
-    status: "active",
-    reminderPeriodHours: hours,
-    nextReminderAt: next,
+    id: "new",
+    user: params.user,
+    summary: params.summary,
     createdAt: now,
+    notify,
+    lastNotifiedAt: "",
+    nextNotificationAt,
+    status: "active",
   };
 }

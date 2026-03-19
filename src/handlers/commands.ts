@@ -1,7 +1,7 @@
 import type { Bot } from "grammy";
 import { InlineKeyboard, Keyboard } from "grammy";
 import type { Context } from "grammy";
-import { getActiveTasks, getUserByChatId, upsertUser } from "../services/sheets.js";
+import { getActiveTasks, getUserByChatId, upsertUser, sheetUserToDisplayName } from "../services/sheets.js";
 import type { UserRole } from "../types.js";
 import { log } from "../logger.js";
 
@@ -20,7 +20,7 @@ export async function sendTaskList(ctx: Context): Promise<void> {
   }
   const keyboard = new InlineKeyboard();
   for (const t of tasks) {
-    keyboard.text(`${t.assignedName}: ${t.title}`, `task:view:${t.id}`).row();
+    keyboard.text(`${sheetUserToDisplayName(t.user)}: ${t.summary}`, `task:view:${t.id}`).row();
   }
   keyboard.text("Я сделяль", "task:complete_list").row();
   keyboard.text("Напомнить Лёше о...", "task:remind_partner");

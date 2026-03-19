@@ -29,5 +29,3 @@ export const config = {
   /** Column B value for wife */
   wifeSheetUser: optionalEnv("WIFE_SHEET_USER") ?? "tanyu",
 } as const;
-
-export const DEFAULT_REMINDER_HOURS = 168; // 1 week

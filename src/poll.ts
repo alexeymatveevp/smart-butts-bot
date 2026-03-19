@@ -11,7 +11,12 @@ import "dotenv/config";
 import http from "node:http";
 import { bot } from "./bot.js";
 import { log } from "./logger.js";
-import { getTasksDueForReminder, updateTask, getAllFamilyChatIds } from "./services/sheets.js";
+import {
+  getTasksDueForReminder,
+  updateTask,
+  getChatIdsForTaskUser,
+} from "./services/sheets.js";
+import { getNextNotificationAt, FAR_FUTURE } from "./services/notifySchedule.js";
 import { sendReminder, sendReminderToMany } from "./services/notify.js";
 
 const REMINDER_CHECK_INTERVAL_MS = 60_000; // раз в минуту
@@ -25,19 +30,26 @@ async function runReminderCheck(): Promise<void> {
     log("reminders", { dueCount: due.length });
     for (const task of due) {
       try {
-        if (!task.assignedTo || task.assignedName === "Оба") {
-          const chatIds = await getAllFamilyChatIds();
-          await sendReminderToMany(bot.api, chatIds, task.title);
-          log("reminder sent", { taskTitle: task.title, to: "both" });
+        const chatIds = await getChatIdsForTaskUser(task.user);
+        if (chatIds.length === 0) continue;
+        if (chatIds.length > 1) {
+          await sendReminderToMany(bot.api, chatIds, task.summary);
+          log("reminder sent", { taskSummary: task.summary, to: "both" });
         } else {
-          await sendReminder(bot.api, task.assignedTo, task.title);
-          log("reminder sent", { taskTitle: task.title, to: task.assignedName });
+          await sendReminder(bot.api, chatIds[0], task.summary);
+          log("reminder sent", { taskSummary: task.summary, to: task.user });
         }
-        const next =
-          task.reminderPeriodHours > 0
-            ? new Date(now.getTime() + task.reminderPeriodHours * 60 * 60 * 1000).toISOString()
-            : "9999-12-31T23:59:59.000Z";
-        await updateTask(task.id, { nextReminderAt: next, lastNotified: now.toISOString() });
+        const { next, isOneTime } = getNextNotificationAt(
+          task.notify,
+          now,
+          now.toISOString(),
+          task.createdAt
+        );
+        const nextNotificationAt = isOneTime ? FAR_FUTURE : next;
+        await updateTask(task.id, {
+          lastNotifiedAt: now.toISOString(),
+          nextNotificationAt,
+        });
       } catch (err) {
         console.error("[bot] Reminder failed for task", task.id, err);
       }

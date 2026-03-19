@@ -3,17 +3,15 @@ export type TaskStatus = "active" | "done";
 export type UserRole = "husband" | "wife";
 
 export interface Task {
+  /** Row identifier for updates (e.g. row_2); not a sheet column */
   id: string;
-  title: string;
-  assignedTo: string; // telegram chat ID
-  assignedName: string;
-  createdBy: string;
+  user: string;
+  summary: string;
+  createdAt: string;
+  notify: string;
+  lastNotifiedAt: string;
+  nextNotificationAt: string;
   status: TaskStatus;
-  reminderPeriodHours: number;
-  nextReminderAt: string; // ISO (computed: lastNotified + period, or stored)
-  createdAt: string; // ISO
-  /** When we last sent a reminder (your sheet column E); used for your schema */
-  lastNotified?: string; // ISO
 }
 
 export interface User {
@@ -26,13 +24,12 @@ export interface User {
 
 // LLM structured actions (Russian-friendly field names in prompts; we use assignTo etc. in code)
 export type LLMAction =
-  | { action: "create_task"; title: string; assignTo: "husband" | "wife" | "me" | "both"; notify?: boolean; periodHours?: number }
+  | { action: "create_task"; title: string; assignTo: "husband" | "wife" | "me" | "both"; notify?: string }
   | { action: "list_tasks"; filter?: "my" | "all" }
   | { action: "complete_task"; taskTitle: string }
   | { action: "delete_task"; taskTitle: string }
   | { action: "reassign_task"; taskTitle: string; assignTo: "husband" | "wife" }
   | { action: "remind_partner"; taskTitle: string }
-  | { action: "set_reminder_period"; taskTitle: string; periodHours: number }
-  | { action: "set_reminder_once"; taskTitle: string; inHours?: number; atTime?: string }
+  | { action: "set_reminder"; taskTitle: string; notify: string }
   | { action: "remove_reminders"; taskTitle: string }
   | { action: "unknown"; reply: string };

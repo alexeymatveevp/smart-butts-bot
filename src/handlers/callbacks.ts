@@ -5,7 +5,8 @@ import {
   getTasks,
   updateTask,
   getUserByChatId,
-  getAllFamilyChatIds,
+  getChatIdsForTaskUser,
+  sheetUserToDisplayName,
 } from "../services/sheets.js";
 import { sendReminder, sendReminderToMany } from "../services/notify.js";
 import { setUserRole, mainKeyboard } from "./commands.js";
@@ -55,7 +56,7 @@ export function registerCallbackHandlers(bot: Bot): void {
       return;
     }
     await ctx.reply(
-      `Задача: ${task.title}\nНазначена: ${task.assignedName}\nНапоминание: каждые ${task.reminderPeriodHours} ч.`
+      `Задача: ${task.summary}\nНазначена: ${sheetUserToDisplayName(task.user)}\nНапоминание: ${task.notify || "нет"}`
     );
   });
 
@@ -68,7 +69,7 @@ export function registerCallbackHandlers(bot: Bot): void {
     }
     const keyboard = new InlineKeyboard();
     for (const t of tasks) {
-      keyboard.text(t.title, `task:complete:${t.id}`).row();
+      keyboard.text(t.summary, `task:complete:${t.id}`).row();
     }
     await ctx.answerCallbackQuery();
     await ctx.reply("Выбери задачу для отметки выполненной:", { reply_markup: keyboard });
@@ -91,7 +92,7 @@ export function registerCallbackHandlers(bot: Bot): void {
       const partnerLabelShort = partnerRole === "husband" ? "Лёше" : "Тане";
       const tasks = await getActiveTasks();
       const partnerTasks = tasks.filter(
-        (t) => t.assignedName === partnerLabel || t.assignedName === "Оба"
+        (t) => sheetUserToDisplayName(t.user) === partnerLabel || sheetUserToDisplayName(t.user) === "Оба"
       );
       if (partnerTasks.length === 0) {
         await ctx.reply(`Нет задач для напоминания ${partnerLabelShort}.`);
@@ -99,7 +100,7 @@ export function registerCallbackHandlers(bot: Bot): void {
       }
       const keyboard = new InlineKeyboard();
       for (const t of partnerTasks) {
-        const label = t.assignedName === "Оба" ? `${t.title} (оба)` : t.title;
+        const label = sheetUserToDisplayName(t.user) === "Оба" ? `${t.summary} (оба)` : t.summary;
         keyboard.text(label, `task:remind:${t.id}`).row();
       }
       await ctx.reply(`Напомнить ${partnerLabelShort} о задаче (выбери):`, {
@@ -121,13 +122,17 @@ export function registerCallbackHandlers(bot: Bot): void {
         await ctx.reply("Задача не найдена.");
         return;
       }
-      if (!task.assignedTo || task.assignedName === "Оба") {
-        const chatIds = await getAllFamilyChatIds();
-        await sendReminderToMany(bot.api, chatIds, task.title);
+      const chatIds = await getChatIdsForTaskUser(task.user);
+      if (chatIds.length === 0) {
+        await ctx.reply("Не удалось определить, кому напомнить.");
+        return;
+      }
+      if (chatIds.length > 1) {
+        await sendReminderToMany(bot.api, chatIds, task.summary);
         await ctx.reply("Напоминание отправлено обоим.");
       } else {
-        await sendReminder(bot.api, task.assignedTo, task.title);
-        const toWhom = task.assignedName === "Лёша" ? "Лёше" : task.assignedName === "Таня" ? "Тане" : task.assignedName;
+        await sendReminder(bot.api, chatIds[0], task.summary);
+        const toWhom = sheetUserToDisplayName(task.user) === "Лёша" ? "Лёше" : sheetUserToDisplayName(task.user) === "Таня" ? "Тане" : sheetUserToDisplayName(task.user);
         await ctx.reply(`Напоминание отправлено ${toWhom}.`);
       }
     } catch (err) {
