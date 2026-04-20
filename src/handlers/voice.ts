@@ -2,7 +2,7 @@ import type { Bot } from "grammy";
 import { config } from "../config.js";
 import { transcribeVoiceFromTelegram } from "../services/transcribe.js";
 import { parseUserIntent } from "../services/llm.js";
-import { getUserByChatId } from "../services/sheets.js";
+import { getUserByChatId } from "../services/storage.js";
 import { executeAction } from "../actions/execute.js";
 import { log } from "../logger.js";
 

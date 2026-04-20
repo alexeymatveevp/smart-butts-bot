@@ -1,7 +1,7 @@
 import type { Bot } from "grammy";
 import { InlineKeyboard, Keyboard } from "grammy";
 import type { Context } from "grammy";
-import { getActiveTasks, getUserByChatId, upsertUser, sheetUserToDisplayName } from "../services/sheets.js";
+import { getActiveTasks, getUserByChatId, upsertUser, sheetUserToDisplayName } from "../services/storage.js";
 import type { UserRole } from "../types.js";
 import { log } from "../logger.js";
 

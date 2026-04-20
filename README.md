@@ -1,6 +1,6 @@
 # Family Todo Telegram Bot
 
-Telegram bot for a shared family todo list: voice commands, task assignment, and reminders. Built with Node.js, TypeScript, grammY, Google Sheets, and OpenAI.
+Telegram bot for a shared family todo list: voice commands, task assignment, and reminders. Built with Node.js, TypeScript, grammY, SQLite (better-sqlite3), and OpenAI.
 
 ## Setup
 
@@ -8,60 +8,27 @@ Telegram bot for a shared family todo list: voice commands, task assignment, and
 
 - Open [@BotFather](https://t.me/BotFather), create a bot with `/newbot`, and copy the token.
 
-### 2. Google Sheets
-
-- Create a [Google Cloud project](https://console.cloud.google.com/), enable **Google Sheets API**.
-- Create a **Service Account** (IAM → Service Accounts → Create). Download the JSON key.
-- Create a Google Sheet (or use your existing one). Share it with the **service account email** (Editor access).
-- **Tasks sheet** (default tab name: `Sheet1` — set `TASKS_SHEET_NAME` if different). Row 1 = headers, data from row 2:
-  - **A** — `user` (e.g. `alexey`, `tanyu`) — must match `HUSBAND_SHEET_USER` / `WIFE_SHEET_USER`. Empty or `both`/`оба` = unassigned (both get reminders).
-  - **B** — `summary` (task title)
-  - **C** — `created` (ISO date)
-  - **D** — `lastNotified` (when the last reminder was sent; bot updates this)
-  - **E** — `notify` (schedule template: `every 1 week`, `every 3 days`, etc.). Empty = no reminders.
-  - **F** — `status` (`active` / `done`)
-- **Users sheet**: add a second tab for users. Row 1 = headers: **A** `sheetUser`, **B** `chatId`, **C** `name`, **D** `role`. Data from row 2; the bot fills rows when users run `/start`. If you don’t rename the tab, it’s often **Sheet2** — set `USERS_SHEET_NAME=Sheet2` in `.env`. If you name it **Users**, no env needed.
-- Copy the **Spreadsheet ID** from the sheet URL: `https://docs.google.com/spreadsheets/d/<SPREADSHEET_ID>/edit`.
-
-**If you get "The caller does not have permission" (403):**
-
-1. **Share the spreadsheet with the service account**
-   - Open your JSON key file (or the Service Account page in Google Cloud Console). Find the **client_email** — it looks like `something@your-project.iam.gserviceaccount.com`.
-   - Open your Google Sheet in the browser → **Share**.
-   - Add that email as a **Editor** (not Viewer). Uncheck "Notify people" if you like.
-   - Save. The bot uses this identity to access the sheet; without sharing, Google returns 403.
-
-2. **Enable Google Sheets API**
-   - In [Google Cloud Console](https://console.cloud.google.com/) → your project → **APIs & Services** → **Library**.
-   - Search for **Google Sheets API** → open it → **Enable**.
-
-3. **Confirm the service account and key**
-   - The `GOOGLE_SERVICE_ACCOUNT_EMAIL` in `.env` must match the `client_email` from the **same** JSON key you use for `GOOGLE_PRIVATE_KEY`.
-   - If you created a new service account, use the new email and new key together.
-
-### 3. OpenAI
+### 2. OpenAI
 
 - Create an [API key](https://platform.openai.com/api-keys) and copy it.
 
-### 4. Environment Variables
+### 3. Environment Variables
 
 Copy `.env.example` to `.env` and set:
 
 - `BOT_TOKEN` — Telegram bot token
 - `OPENAI_API_KEY` — OpenAI API key
-- `GOOGLE_SERVICE_ACCOUNT_EMAIL` — from the service account JSON
-- `GOOGLE_PRIVATE_KEY` — full private key from JSON (keep newlines or use `\n`)
-- `GOOGLE_SHEET_ID` — spreadsheet ID
-- `TASKS_SHEET_NAME` (optional) — tab name for tasks (default: `Sheet1`)
-- `USERS_SHEET_NAME` (optional) — tab name for the 2nd sheet (e.g. `Users` or `Sheet2`)
-- `USERS_SHEET_INDEX` (optional) — use 2nd tab by position: set to `1`; avoids "Unable to parse range" when the tab name does not match
-- `HUSBAND_SHEET_USER` / `WIFE_SHEET_USER` (optional) — values that match your sheet column B, e.g. `alexey` / `tanyu`
+- `DATABASE_PATH` — path to the SQLite file (default: `./data/bot.db`). On a VPS, prefer an absolute path like `/var/lib/smart-butts-bot/bot.db`. Parent directories are created on first run.
+- `HUSBAND_CHAT_ID` / `WIFE_CHAT_ID` (optional) — pre-configured chat IDs; otherwise discovered via `/start`
+- `HUSBAND_SHEET_USER` / `WIFE_SHEET_USER` (optional) — labels stored in `tasks.user` (default: `alexey` / `tanyu`). Empty or `both` / `оба` = unassigned (both get reminders).
 
-### 5. Run locally (optional)
+The `users` and `tasks` tables are created automatically when the bot starts.
 
-Use **long polling** so Telegram sends updates to your machine (no webhook or public URL):
+### 4. Run locally
 
-1. If the bot already had a webhook set, remove it:
+Long polling — no webhook or public URL needed:
+
+1. If the bot previously had a webhook, remove it:
    ```bash
    curl "https://api.telegram.org/bot<BOT_TOKEN>/deleteWebhook"
    ```
@@ -73,24 +40,33 @@ Use **long polling** so Telegram sends updates to your machine (no webhook or pu
    ```
    (`npm run dev` uses `tsx watch src/poll.ts` — restarts on file changes.)
 
-### 6. Deploy to Railway
+### 5. Deploy to a VPS
 
-На Railway бот работает в одном процессе: long polling + раз в минуту проверка напоминаний. Webhook не нужен.
+One process handles everything: long polling + the once-per-minute reminder check. Webhook is not needed.
 
-1. Создайте проект на [Railway](https://railway.app), подключите репозиторий.
-2. **Build Command:** `npm run build`
-3. **Start Command:** `npm start` (запускает `node dist/src/poll.js`)
-4. В настройках сервиса добавьте все переменные окружения из `.env` (BOT_TOKEN, OPENAI_API_KEY, GOOGLE_*, TASKS_SHEET_NAME и т.д.).
-5. Если раньше бот работал по webhook, удалите его, чтобы Telegram снова слал обновления в long polling:
+1. Clone the repo on the VPS, `npm install`, `npm run build`.
+2. Set a durable `DATABASE_PATH` (e.g. `/var/lib/smart-butts-bot/bot.db`) in `.env`. Make sure the service user can read/write the parent directory.
+3. Start with `npm start` (runs `node dist/src/poll.js`). Wire it into `systemd` / `pm2` / Docker as you prefer.
+4. The process listens on `PORT` (default `3000`) and returns `200 OK` for health checks.
+
+Back up the SQLite file the same way you'd back up any data file — `sqlite3 bot.db ".backup '/path/to/backup.db'"` works while the bot is running.
+
+### 6. Importing existing Google Sheets data (one-time)
+
+If you were running the previous Sheets-backed version and want to carry over existing tasks/users:
+
+1. Temporarily add the old `GOOGLE_*` vars back to `.env` (see `.env.example`).
+2. Run:
    ```bash
-   curl "https://api.telegram.org/bot<BOT_TOKEN>/deleteWebhook"
+   npm run import-sheets
    ```
+3. Remove the `GOOGLE_*` vars from `.env` once done.
 
-Сервис слушает порт из `PORT` (Railway задаёт сам) и отдаёт 200 на любой запрос — для health check.
+The script is idempotent — rerun it safely.
 
-### 7. Напоминания
+### 7. Reminders
 
-Планировщик встроен в процесс: раз в минуту проверяются задачи из таблицы и отправляются напоминания. Отдельный cron или HTTP-эндпоинт не нужны.
+The scheduler runs in-process: every minute it checks due tasks and sends reminders. No external cron needed.
 
 ## Commands
 
@@ -109,8 +85,9 @@ Voice or text examples (Russian):
 
 ## Project structure
 
-- `src/poll.ts` — точка входа: long polling, планировщик напоминаний (раз в минуту), HTTP health check
-- `src/bot.ts` — grammY bot и регистрация хендлеров
-- `src/handlers/` — Commands, voice, text, callbacks
-- `src/services/` — Sheets, transcribe, LLM, notify
-- `src/actions/execute.ts` — Execute parsed LLM actions
+- `src/poll.ts` — entry point: long polling, reminder scheduler (runs every minute), HTTP health check
+- `src/bot.ts` — grammY bot and handler registration
+- `src/handlers/` — commands, voice, text, callbacks
+- `src/services/` — `db.ts` (SQLite connection + schema bootstrap), `storage.ts` (tasks/users CRUD), `transcribe`, `llm`, `notify`
+- `src/actions/execute.ts` — execute parsed LLM actions
+- `scripts/import-from-sheets.ts` — one-time migration from the old Google Sheets backend

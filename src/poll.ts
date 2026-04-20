@@ -15,7 +15,7 @@ import {
   getTasksDueForReminder,
   updateTask,
   getChatIdsForTaskUser,
-} from "./services/sheets.js";
+} from "./services/storage.js";
 import { getNextNotificationAt, FAR_FUTURE } from "./services/notifySchedule.js";
 import { sendReminder, sendReminderToMany } from "./services/notify.js";
 

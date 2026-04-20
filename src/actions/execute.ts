@@ -10,7 +10,7 @@ import {
   getUserByChatId,
   getChatIdsForTaskUser,
   sheetUserToDisplayName,
-} from "../services/sheets.js";
+} from "../services/storage.js";
 import { getNextNotificationAt, FAR_FUTURE } from "../services/notifySchedule.js";
 import { sendReminder, sendReminderToMany } from "../services/notify.js";
 import { config } from "../config.js";

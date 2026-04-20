@@ -7,7 +7,7 @@ import {
   getUserByChatId,
   getChatIdsForTaskUser,
   sheetUserToDisplayName,
-} from "../services/sheets.js";
+} from "../services/storage.js";
 import { sendReminder, sendReminderToMany } from "../services/notify.js";
 import { setUserRole, mainKeyboard } from "./commands.js";
 import { log } from "../logger.js";
@@ -24,8 +24,8 @@ export function registerCallbackHandlers(bot: Bot): void {
       await ctx.reply("Кнопка «Список дел» внизу — жми когда нужно.", { reply_markup: mainKeyboard });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      await ctx.answerCallbackQuery({ text: "Ошибка записи в таблицу" });
-      await ctx.reply(`Не удалось сохранить в Google Таблицу: ${msg}\n\nПроверь, что таблица открыта по ссылке из .env и расшарена на ${process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL} (Editor).`);
+      await ctx.answerCallbackQuery({ text: "Ошибка записи в БД" });
+      await ctx.reply(`Не удалось сохранить в базу: ${msg}`);
     }
   });
 
@@ -40,8 +40,8 @@ export function registerCallbackHandlers(bot: Bot): void {
       await ctx.reply("Кнопка «Список дел» внизу — жми когда нужно.", { reply_markup: mainKeyboard });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      await ctx.answerCallbackQuery({ text: "Ошибка записи в таблицу" });
-      await ctx.reply(`Не удалось сохранить в Google Таблицу: ${msg}\n\nПроверь, что таблица открыта по ссылке из .env и расшарена на ${process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL} (Editor).`);
+      await ctx.answerCallbackQuery({ text: "Ошибка записи в БД" });
+      await ctx.reply(`Не удалось сохранить в базу: ${msg}`);
     }
   });
 

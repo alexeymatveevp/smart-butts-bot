@@ -1,23 +1,26 @@
 {
   "name": "smart-butts-bot",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Family todo list Telegram bot",
   "type": "module",
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/poll.ts",
     "start": "node dist/src/poll.js",
-    "poll": "tsx src/poll.ts"
+    "poll": "tsx src/poll.ts",
+    "import-sheets": "tsx scripts/import-from-sheets.ts"
   },
   "dependencies": {
+    "better-sqlite3": "^11.7.0",
     "chrono-node": "^2.9.0",
     "dotenv": "^16.4.5",
-    "googleapis": "^144.0.0",
     "grammy": "^1.34.0",
     "openai": "^4.73.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.0",
+    "googleapis": "^144.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.0"
   },

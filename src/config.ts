@@ -11,21 +11,12 @@ function optionalEnv(name: string): string | undefined {
 export const config = {
   botToken: requireEnv("BOT_TOKEN"),
   openaiApiKey: requireEnv("OPENAI_API_KEY"),
-  google: {
-    clientEmail: requireEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL"),
-    privateKey: requireEnv("GOOGLE_PRIVATE_KEY").replace(/\\n/g, "\n"),
-    sheetId: requireEnv("GOOGLE_SHEET_ID"),
-  },
+  /** Path to SQLite database file. Created (with parents) on first run. */
+  databasePath: optionalEnv("DATABASE_PATH") ?? "./data/bot.db",
   husbandChatId: optionalEnv("HUSBAND_CHAT_ID"),
   wifeChatId: optionalEnv("WIFE_CHAT_ID"),
-  /** Sheet tab name for tasks (your existing tab, e.g. "Sheet1") */
-  tasksSheetName: optionalEnv("TASKS_SHEET_NAME") ?? "Sheet1",
-  /** Sheet tab name for users, or use USERS_SHEET_INDEX to use 2nd tab by position (e.g. 1) */
-  usersSheetName: optionalEnv("USERS_SHEET_NAME"),
-  /** If set (e.g. 1 = second tab), use this tab for Users instead of usersSheetName; avoids "Unable to parse range" when tab name differs */
-  usersSheetIndex: optionalEnv("USERS_SHEET_INDEX") ? Number(optionalEnv("USERS_SHEET_INDEX")) : undefined,
-  /** Column B value for husband (must match your sheet's "user" column) */
+  /** Value stored in tasks.user for husband (free-form label, e.g. "alexey") */
   husbandSheetUser: optionalEnv("HUSBAND_SHEET_USER") ?? "alexey",
-  /** Column B value for wife */
+  /** Value stored in tasks.user for wife */
   wifeSheetUser: optionalEnv("WIFE_SHEET_USER") ?? "tanyu",
 } as const;
